@@ -6,6 +6,10 @@ $session->requireRole('doctor');
 
 $database = new Database();
 $db = $database->getConnection();
+
+// ADD THIS LINE: Initialize NeoCareUtils
+require_once '../includes/functions.php';
+
 $current_user = $session->getCurrentUser();
 $hospital_id = $current_user['hospital_id'];
 
@@ -107,7 +111,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 ?>
 
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">View Children</h1>
+    <h1 class="h2"><i class="fas fa-baby me-2 text-primary"></i>View Children</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
         <a href="medical_records.php" class="btn btn-primary me-2">
             <i class="fas fa-plus me-1"></i>Add Medical Record
@@ -115,43 +119,46 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
         <a href="growth_charts.php" class="btn btn-outline-secondary">
             <i class="fas fa-chart-area me-1"></i>Growth Charts
         </a>
+        <a href="dashboard.php" class="btn btn-outline-info">
+            <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+        </a>
     </div>
 </div>
 
 <!-- Statistics Cards -->
 <div class="row mb-4">
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-primary">
             <div class="card-body">
                 <i class="fas fa-baby fa-2x text-primary mb-2"></i>
-                <h4><?php echo $stats['total_children']; ?></h4>
+                <h4 class="text-primary"><?php echo $stats['total_children']; ?></h4>
                 <p class="card-text">Total Children</p>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-success">
             <div class="card-body">
                 <i class="fas fa-calendar-check fa-2x text-success mb-2"></i>
-                <h4><?php echo $stats['recent_visits']; ?></h4>
+                <h4 class="text-success"><?php echo $stats['recent_visits']; ?></h4>
                 <p class="card-text">Recent Visits (30 days)</p>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-info">
             <div class="card-body">
                 <i class="fas fa-clock fa-2x text-info mb-2"></i>
-                <h4><?php echo round($stats['avg_age_months']); ?></h4>
+                <h4 class="text-info"><?php echo $stats['avg_age_months'] ? round($stats['avg_age_months']) : '0'; ?></h4>
                 <p class="card-text">Average Age (months)</p>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-warning">
             <div class="card-body">
-                <i class="fas fa-exclamation-triangle fa-2x text-danger mb-2"></i>
-                <h4><?php echo $stats['children_with_overdue']; ?></h4>
+                <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+                <h4 class="text-warning"><?php echo $stats['children_with_overdue']; ?></h4>
                 <p class="card-text">With Overdue Vaccines</p>
             </div>
         </div>
@@ -160,6 +167,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 
 <!-- Search and Filters -->
 <div class="card mb-4">
+    <div class="card-header">
+        <h5><i class="fas fa-filter me-2"></i>Search & Filter Children</h5>
+    </div>
     <div class="card-body">
         <form method="GET" class="row g-3">
             <div class="col-md-4">
@@ -199,6 +209,27 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
     </div>
 </div>
 
+<!-- Quick Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 class="card-title">Quick Filters</h6>
+        <div class="btn-group btn-group-sm flex-wrap" role="group">
+            <button type="button" class="btn btn-outline-danger" onclick="quickFilter('overdue')">
+                <i class="fas fa-exclamation-triangle me-1"></i>With Overdue Vaccines
+            </button>
+            <button type="button" class="btn btn-outline-info" onclick="quickFilter('recent')">
+                <i class="fas fa-baby me-1"></i>Infants (0-12m)
+            </button>
+            <button type="button" class="btn btn-outline-primary" onclick="quickFilter('male')">
+                <i class="fas fa-mars me-1"></i>Male
+            </button>
+            <button type="button" class="btn btn-outline-warning" onclick="quickFilter('female')">
+                <i class="fas fa-venus me-1"></i>Female
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Children List -->
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -214,14 +245,19 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             <div class="text-center py-4">
                 <i class="fas fa-search fa-3x text-muted mb-3"></i>
                 <h5 class="text-muted">No children found</h5>
-                <p>Try adjusting your search criteria or filters</p>
-                <a href="children.php" class="btn btn-outline-primary">View All Children</a>
+                <?php if (!empty($search) || !empty($age_filter) || !empty($gender_filter)): ?>
+                    <p>Try adjusting your search criteria or filters</p>
+                    <a href="children.php" class="btn btn-outline-primary">View All Children</a>
+                <?php else: ?>
+                    <p>No children are registered in this hospital yet.</p>
+                    <p class="text-muted">Children records are managed by nurses during registration.</p>
+                <?php endif; ?>
             </div>
         <?php else: ?>
             <div class="row">
                 <?php foreach ($children as $child): ?>
                 <div class="col-lg-6 mb-3">
-                    <div class="card h-100 border-start border-<?php echo $child['overdue_vaccines'] > 0 ? 'danger' : 'success'; ?> border-3">
+                    <div class="card h-100 border-start border-<?php echo ($child['overdue_vaccines'] ?? 0) > 0 ? 'danger' : 'success'; ?> border-3">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
@@ -244,7 +280,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                 </div>
                                 <div class="col-4">
                                     <small class="text-muted d-block">Visits</small>
-                                    <strong><?php echo $child['total_visits']; ?></strong>
+                                    <strong><?php echo $child['total_visits'] ?? 0; ?></strong>
                                 </div>
                                 <div class="col-4">
                                     <small class="text-muted d-block">Last Visit</small>
@@ -258,18 +294,26 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                             <div class="mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <small class="text-muted">Vaccination Progress</small>
-                                    <small><?php echo $child['completed_vaccines']; ?>/<?php echo $child['total_vaccines']; ?></small>
+                                    <small><?php echo $child['completed_vaccines'] ?? 0; ?>/<?php echo $child['total_vaccines'] ?? 0; ?></small>
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <?php 
-                                    $progress = $child['total_vaccines'] > 0 ? ($child['completed_vaccines'] / $child['total_vaccines']) * 100 : 0;
+                                    $total_vaccines = $child['total_vaccines'] ?? 0;
+                                    $completed_vaccines = $child['completed_vaccines'] ?? 0;
+                                    $progress = $total_vaccines > 0 ? ($completed_vaccines / $total_vaccines) * 100 : 0;
                                     ?>
                                     <div class="progress-bar bg-success" style="width: <?php echo $progress; ?>%"></div>
                                 </div>
-                                <?php if ($child['overdue_vaccines'] > 0): ?>
+                                <?php $overdue_vaccines = $child['overdue_vaccines'] ?? 0; ?>
+                                <?php if ($overdue_vaccines > 0): ?>
                                     <small class="text-danger">
                                         <i class="fas fa-exclamation-triangle me-1"></i>
-                                        <?php echo $child['overdue_vaccines']; ?> overdue vaccination<?php echo $child['overdue_vaccines'] > 1 ? 's' : ''; ?>
+                                        <?php echo $overdue_vaccines; ?> overdue vaccination<?php echo $overdue_vaccines > 1 ? 's' : ''; ?>
+                                    </small>
+                                <?php elseif ($total_vaccines == 0): ?>
+                                    <small class="text-muted">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        No vaccination schedule set up yet
                                     </small>
                                 <?php endif; ?>
                             </div>
@@ -293,6 +337,11 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                     <?php endif; ?>
                                 </div>
                             </div>
+                            <?php else: ?>
+                            <div class="mb-3">
+                                <small class="text-muted d-block mb-1">Latest Measurements</small>
+                                <small class="text-muted">No measurements recorded yet</small>
+                            </div>
                             <?php endif; ?>
                             
                             <!-- Parent Info -->
@@ -300,6 +349,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                 <small class="text-muted d-block">Parent/Guardian</small>
                                 <strong><?php echo htmlspecialchars($child['parent_name']); ?></strong><br>
                                 <small><i class="fas fa-phone me-1"></i><?php echo htmlspecialchars($child['parent_phone']); ?></small>
+                                <?php if ($child['parent_email']): ?>
+                                    <br><small><i class="fas fa-envelope me-1"></i><?php echo htmlspecialchars($child['parent_email']); ?></small>
+                                <?php endif; ?>
                             </div>
                             
                             <!-- Actions -->
@@ -349,7 +401,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Child Details</h5>
+                <h5 class="modal-title">
+                    <i class="fas fa-baby me-2"></i>Child Details
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="childDetailsContent">
@@ -357,14 +411,14 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="window.print()">Print</button>
+                <button type="button" class="btn btn-primary" onclick="window.print()">
+                    <i class="fas fa-print me-1"></i>Print
+                </button>
             </div>
         </div>
     </div>
 </div>
 
-<?php
-$extra_scripts = '
 <script>
 function viewChildDetails(childId) {
     // Show loading
@@ -379,30 +433,32 @@ function viewChildDetails(childId) {
     
     new bootstrap.Modal(document.getElementById("childDetailsModal")).show();
     
-    // Load child details via AJAX
-    fetch(`../api/get_child_details.php?child_id=${childId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                document.getElementById("childDetailsContent").innerHTML = data.html;
-            } else {
-                document.getElementById("childDetailsContent").innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="fas fa-exclamation-circle me-2"></i>
-                        Error loading child details: ${data.message || "Unknown error"}
+    // Simple fallback since API might not exist yet
+    setTimeout(() => {
+        document.getElementById("childDetailsContent").innerHTML = `
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                Child details API is under development.
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Available Actions</h6>
+                    <div class="d-grid gap-2">
+                        <a href="medical_records.php?child_id=${childId}" class="btn btn-outline-success">
+                            <i class="fas fa-plus me-1"></i>Add Medical Record
+                        </a>
+                        <a href="growth_charts.php?child_id=${childId}" class="btn btn-outline-info">
+                            <i class="fas fa-chart-area me-1"></i>View Growth Charts
+                        </a>
                     </div>
-                `;
-            }
-        })
-        .catch(error => {
-            console.error("Error:", error);
-            document.getElementById("childDetailsContent").innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-circle me-2"></i>
-                    Error loading child details. Please try again.
                 </div>
-            `;
-        });
+                <div class="col-md-6">
+                    <h6>Quick Info</h6>
+                    <p class="text-muted">Detailed child information including medical history, vaccination records, and growth tracking will be shown here in future updates.</p>
+                </div>
+            </div>
+        `;
+    }, 1000);
 }
 
 // Auto search on typing (debounced)
@@ -419,11 +475,15 @@ document.querySelector("input[name=search]").addEventListener("input", function(
 // Quick filter buttons
 function quickFilter(filter) {
     const url = new URL(window.location);
+    url.searchParams.delete('search');
+    url.searchParams.delete('age_filter');
+    url.searchParams.delete('gender_filter');
     
     switch(filter) {
         case "overdue":
-            url.searchParams.set("search", "overdue");
-            break;
+            // This would need custom logic to filter by overdue vaccines
+            alert('Filter by overdue vaccines - Feature enhancement needed');
+            return;
         case "recent":
             url.searchParams.set("age_filter", "infant");
             break;
@@ -438,37 +498,13 @@ function quickFilter(filter) {
     window.location.href = url.toString();
 }
 
-// Add quick filter buttons to the page
-document.addEventListener("DOMContentLoaded", function() {
-    const quickFiltersHTML = `
-        <div class="card mt-3">
-            <div class="card-body">
-                <h6 class="card-title">Quick Filters</h6>
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-danger" onclick="quickFilter(\'overdue\')">
-                        <i class="fas fa-exclamation-triangle me-1"></i>With Overdue Vaccines
-                    </button>
-                    <button type="button" class="btn btn-outline-info" onclick="quickFilter(\'recent\')">
-                        <i class="fas fa-baby me-1"></i>Infants (0-12m)
-                    </button>
-                    <button type="button" class="btn btn-outline-primary" onclick="quickFilter(\'male\')">
-                        <i class="fas fa-mars me-1"></i>Male
-                    </button>
-                    <button type="button" class="btn btn-outline-warning" onclick="quickFilter(\'female\')">
-                        <i class="fas fa-venus me-1"></i>Female
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Insert after the search card
-    const searchCard = document.querySelector(".card:nth-of-type(2)");
-    if (searchCard) {
-        searchCard.insertAdjacentHTML("afterend", quickFiltersHTML);
+// Auto-clear search on escape key
+document.querySelector("input[name=search]").addEventListener("keydown", function(e) {
+    if (e.key === 'Escape') {
+        this.value = '';
+        this.form.submit();
     }
 });
-</script>';
+</script>
 
-require_once '../includes/footer.php';
-?>
+<?php require_once '../includes/footer.php'; ?>

@@ -22,6 +22,7 @@ if (isset($_SESSION['is_parent']) && $_SESSION['is_parent']) {
             header('Location: super_admin/dashboard.php');
             break;
         case 'admin':
+        case 'hospital_admin':  // ADD THIS LINE - Support both admin and hospital_admin
             header('Location: admin/dashboard.php');
             break;
         case 'doctor':

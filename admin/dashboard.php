@@ -2,14 +2,15 @@
 $page_title = 'Admin Dashboard';
 require_once '../includes/header.php';
 
-$session->requireRole('admin');
+// FIX: Update session role check to accept 'hospital_admin'
+$session->requireRole(['admin', 'hospital_admin']);
 
 $database = new Database();
 $db = $database->getConnection();
 $current_user = $session->getCurrentUser();
 $hospital_id = $current_user['hospital_id'];
 
-// Hospital Information
+// Hospital Information - FIX: Use correct column names from your database
 $hospital_query = "SELECT * FROM hospitals WHERE hospital_id = :hospital_id";
 $hospital_stmt = $db->prepare($hospital_query);
 $hospital_stmt->bindParam(':hospital_id', $hospital_id);
@@ -45,15 +46,15 @@ $vaccine_stmt->bindParam(':hospital_id', $hospital_id);
 $vaccine_stmt->execute();
 $vaccine_stats = $vaccine_stmt->fetch(PDO::FETCH_ASSOC);
 
-// Staff Performance Overview
+// Staff Performance Overview - FIX: Remove last_login reference
 $staff_performance_query = "SELECT 
     u.user_id,
     u.full_name,
     u.role,
     u.is_active,
+    u.created_at,
     COALESCE(child_count.count, 0) as children_registered,
-    COALESCE(vaccine_count.count, 0) as vaccines_administered,
-    u.last_login
+    COALESCE(vaccine_count.count, 0) as vaccines_administered
     FROM users u
     LEFT JOIN (
         SELECT registered_by, COUNT(*) as count 
@@ -107,11 +108,11 @@ $activities_stmt->bindParam(':hospital_id', $hospital_id);
 $activities_stmt->execute();
 $recent_activities = $activities_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Urgent Actions Needed
+// Urgent Actions Needed - FIX: Remove last_login reference
 $urgent_actions_query = "SELECT 
     COUNT(CASE WHEN vs.status = 'pending' AND vs.scheduled_date < DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 END) as critical_overdue,
     COUNT(CASE WHEN vs.status = 'pending' AND vs.scheduled_date = CURDATE() THEN 1 END) as due_today,
-    COUNT(CASE WHEN u.last_login < DATE_SUB(CURDATE(), INTERVAL 30 DAY) OR u.last_login IS NULL THEN 1 END) as inactive_staff
+    COUNT(CASE WHEN u.created_at < DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND u.is_active = 0 THEN 1 END) as inactive_staff
     FROM vaccination_schedule vs
     JOIN children c ON vs.child_id = c.child_id
     RIGHT JOIN users u ON u.hospital_id = c.hospital_id
@@ -142,7 +143,7 @@ $vaccination_trends = $trends_stmt->fetchAll(PDO::FETCH_ASSOC);
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">
         <i class="fas fa-user-tie me-2 text-primary"></i>
-        Admin Dashboard - <?php echo htmlspecialchars($hospital_info['name']); ?>
+        Admin Dashboard - <?php echo htmlspecialchars($hospital_info['hospital_name']); ?>
     </h1>
     <div class="btn-toolbar mb-2 mb-md-0">
         <div class="btn-group me-2">
@@ -225,7 +226,7 @@ $vaccination_trends = $trends_stmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
                 <div class="col-md-4">
                     <?php if ($urgent_actions['inactive_staff'] > 0): ?>
-                        <p class="mb-1"><strong><?php echo $urgent_actions['inactive_staff']; ?></strong> staff members haven't logged in for 30+ days.</p>
+                        <p class="mb-1"><strong><?php echo $urgent_actions['inactive_staff']; ?></strong> staff members are inactive.</p>
                     <?php endif; ?>
                 </div>
             </div>
@@ -251,7 +252,7 @@ $vaccination_trends = $trends_stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <th>Role</th>
                                 <th>Children Registered</th>
                                 <th>Vaccines Given</th>
-                                <th>Last Login</th>
+                                <th>Account Created</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -282,22 +283,13 @@ $vaccination_trends = $trends_stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if ($staff['last_login']): ?>
+                                    <?php if ($staff['created_at']): ?>
                                         <?php 
-                                        $last_login = new DateTime($staff['last_login']);
-                                        $now = new DateTime();
-                                        $diff = $now->diff($last_login);
-                                        
-                                        if ($diff->days == 0) {
-                                            echo '<span class="text-success">Today</span>';
-                                        } elseif ($diff->days <= 7) {
-                                            echo '<span class="text-warning">' . $diff->days . ' days ago</span>';
-                                        } else {
-                                            echo '<span class="text-danger">' . $diff->days . ' days ago</span>';
-                                        }
+                                        $created = new DateTime($staff['created_at']);
+                                        echo '<span class="text-muted">' . $created->format('M j, Y') . '</span>';
                                         ?>
                                     <?php else: ?>
-                                        <span class="text-muted">Never</span>
+                                        <span class="text-muted">Unknown</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -344,17 +336,12 @@ $vaccination_trends = $trends_stmt->fetchAll(PDO::FETCH_ASSOC);
                 <h5><i class="fas fa-hospital me-2"></i>Hospital Information</h5>
             </div>
             <div class="card-body">
-                <p><strong>Name:</strong> <?php echo htmlspecialchars($hospital_info['name']); ?></p>
-                <p><strong>Location:</strong> <?php echo htmlspecialchars($hospital_info['location']); ?></p>
-                <p><strong>Contact Person:</strong> <?php echo htmlspecialchars($hospital_info['contact_person']); ?></p>
-                <p><strong>Phone:</strong> <?php echo htmlspecialchars($hospital_info['phone']); ?></p>
-                <p><strong>Email:</strong> <?php echo htmlspecialchars($hospital_info['email']); ?></p>
-                <p><strong>Status:</strong> 
-                    <?php if ($hospital_info['is_active']): ?>
-                        <span class="badge bg-success">Active</span>
-                    <?php else: ?>
-                        <span class="badge bg-danger">Inactive</span>
-                    <?php endif; ?>
+                <p><strong>Name:</strong> <?php echo htmlspecialchars($hospital_info['hospital_name']); ?></p>
+                <p><strong>Address:</strong> <?php echo htmlspecialchars($hospital_info['address'] ?? 'Not specified'); ?></p>
+                <p><strong>Phone:</strong> <?php echo htmlspecialchars($hospital_info['phone'] ?? 'Not specified'); ?></p>
+                <p><strong>Email:</strong> <?php echo htmlspecialchars($hospital_info['email'] ?? 'Not specified'); ?></p>
+                <p><strong>Established:</strong> 
+                    <?php echo date('M j, Y', strtotime($hospital_info['created_at'])); ?>
                 </p>
             </div>
         </div>

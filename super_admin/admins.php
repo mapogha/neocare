@@ -7,19 +7,8 @@ $session->requireRole('super_admin');
 $database = new Database();
 $db = $database->getConnection();
 
-// Initialize utils if not already available
-if (!isset($utils)) {
-    require_once '../includes/functions.php';
-    if (!class_exists('Utils')) {
-        // Define a minimal Utils class if not already defined
-        class Utils {
-            public function cleanInput($input) {
-                return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
-            }
-        }
-    }
-    $utils = new Utils();
-}
+// Initialize NeoCareUtils
+require_once '../includes/functions.php';
 
 $error = '';
 $success = '';
@@ -39,30 +28,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (empty($hospital_id) || empty($username) || empty($password) || empty($full_name)) {
             $error = 'Please fill in all required fields';
         } else {
-            // Check if username exists
-            $check_query = "SELECT COUNT(*) as count FROM users WHERE username = :username";
-            $check_stmt = $db->prepare($check_query);
-            $check_stmt->bindParam(':username', $username);
-            $check_stmt->execute();
-            $exists = $check_stmt->fetch(PDO::FETCH_ASSOC)['count'];
-            
-            if ($exists > 0) {
-                $error = 'Username already exists';
+            // Validate email if provided
+            if (!empty($email) && !$utils->validateEmail($email)) {
+                $error = 'Please enter a valid email address';
+            }
+            // Validate phone if provided
+            elseif (!empty($phone) && !$utils->validatePhone($phone)) {
+                $error = 'Please enter a valid phone number (Tanzanian format)';
             } else {
-                $query = "INSERT INTO users (hospital_id, username, password, full_name, email, phone, role) 
-                         VALUES (:hospital_id, :username, :password, :full_name, :email, :phone, 'admin')";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(':hospital_id', $hospital_id);
-                $stmt->bindParam(':username', $username);
-                $stmt->bindParam(':password', $password);
-                $stmt->bindParam(':full_name', $full_name);
-                $stmt->bindParam(':email', $email);
-                $stmt->bindParam(':phone', $phone);
+                // Check if username exists
+                $check_query = "SELECT COUNT(*) as count FROM users WHERE username = :username";
+                $check_stmt = $db->prepare($check_query);
+                $check_stmt->bindParam(':username', $username);
+                $check_stmt->execute();
+                $exists = $check_stmt->fetch(PDO::FETCH_ASSOC)['count'];
                 
-                if ($stmt->execute()) {
-                    $success = 'Hospital admin added successfully';
+                if ($exists > 0) {
+                    $error = 'Username already exists';
                 } else {
-                    $error = 'Failed to add hospital admin';
+                    // FIXED: Changed 'admin' to 'hospital_admin'
+                    $query = "INSERT INTO users (hospital_id, username, password, full_name, email, phone, role, is_active, created_at) 
+                             VALUES (:hospital_id, :username, :password, :full_name, :email, :phone, 'hospital_admin', 1, NOW())";
+                    $stmt = $db->prepare($query);
+                    $stmt->bindParam(':hospital_id', $hospital_id);
+                    $stmt->bindParam(':username', $username);
+                    $stmt->bindParam(':password', $password);
+                    $stmt->bindParam(':full_name', $full_name);
+                    $stmt->bindParam(':email', $email);
+                    $stmt->bindParam(':phone', $phone);
+                    
+                    if ($stmt->execute()) {
+                        $success = 'Hospital admin added successfully! User ID: ' . $db->lastInsertId();
+                    } else {
+                        $error = 'Failed to add hospital admin: ' . implode(', ', $stmt->errorInfo());
+                    }
                 }
             }
         }
@@ -79,32 +78,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (empty($hospital_id) || empty($username) || empty($full_name)) {
             $error = 'Please fill in all required fields';
         } else {
-            $query = "UPDATE users SET hospital_id = :hospital_id, username = :username, 
-                     full_name = :full_name, email = :email, phone = :phone, is_active = :is_active";
-            
-            if (!empty($password)) {
-                $query .= ", password = :password";
+            // Validate email if provided
+            if (!empty($email) && !$utils->validateEmail($email)) {
+                $error = 'Please enter a valid email address';
             }
-            
-            $query .= " WHERE user_id = :user_id AND role = 'admin'";
-            
-            $stmt = $db->prepare($query);
-            $stmt->bindParam(':hospital_id', $hospital_id);
-            $stmt->bindParam(':username', $username);
-            $stmt->bindParam(':full_name', $full_name);
-            $stmt->bindParam(':email', $email);
-            $stmt->bindParam(':phone', $phone);
-            $stmt->bindParam(':is_active', $is_active);
-            $stmt->bindParam(':user_id', $user_id);
-            
-            if (!empty($password)) {
-                $stmt->bindParam(':password', $password);
-            }
-            
-            if ($stmt->execute()) {
-                $success = 'Hospital admin updated successfully';
+            // Validate phone if provided
+            elseif (!empty($phone) && !$utils->validatePhone($phone)) {
+                $error = 'Please enter a valid phone number (Tanzanian format)';
             } else {
-                $error = 'Failed to update hospital admin';
+                $query = "UPDATE users SET hospital_id = :hospital_id, username = :username, 
+                         full_name = :full_name, email = :email, phone = :phone, is_active = :is_active";
+                
+                if (!empty($password)) {
+                    $query .= ", password = :password";
+                }
+                
+                // FIXED: Changed 'admin' to 'hospital_admin'
+                $query .= " WHERE user_id = :user_id AND role = 'hospital_admin'";
+                
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(':hospital_id', $hospital_id);
+                $stmt->bindParam(':username', $username);
+                $stmt->bindParam(':full_name', $full_name);
+                $stmt->bindParam(':email', $email);
+                $stmt->bindParam(':phone', $phone);
+                $stmt->bindParam(':is_active', $is_active);
+                $stmt->bindParam(':user_id', $user_id);
+                
+                if (!empty($password)) {
+                    $stmt->bindParam(':password', $password);
+                }
+                
+                if ($stmt->execute()) {
+                    $success = 'Hospital admin updated successfully';
+                } else {
+                    $error = 'Failed to update hospital admin';
+                }
             }
         }
     } elseif ($action == 'delete') {
@@ -120,7 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($children_count > 0) {
             $error = 'Cannot delete admin. Hospital has registered children.';
         } else {
-            $query = "DELETE FROM users WHERE user_id = :user_id AND role = 'admin'";
+            // FIXED: Changed 'admin' to 'hospital_admin'
+            $query = "DELETE FROM users WHERE user_id = :user_id AND role = 'hospital_admin'";
             $stmt = $db->prepare($query);
             $stmt->bindParam(':user_id', $user_id);
             
@@ -159,7 +169,13 @@ $hospitals_stmt = $db->prepare($hospitals_query);
 $hospitals_stmt->execute();
 $hospitals = $hospitals_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get all hospital admins with their hospital and statistics
+// FIXED: Debug check for hospital_admin users before complex query
+$simple_admin_check = "SELECT COUNT(*) as count FROM users WHERE role = 'hospital_admin'";
+$simple_stmt = $db->prepare($simple_admin_check);
+$simple_stmt->execute();
+$admin_count = $simple_stmt->fetch(PDO::FETCH_ASSOC)['count'];
+
+// FIXED: Get all hospital admins with their hospital and statistics
 $admins_query = "SELECT u.*, h.$name_column as hospital_name,
                   COUNT(DISTINCT c.child_id) as total_children,
                   COUNT(DISTINCT staff.user_id) as total_staff,
@@ -169,7 +185,7 @@ $admins_query = "SELECT u.*, h.$name_column as hospital_name,
                   LEFT JOIN children c ON h.hospital_id = c.hospital_id
                   LEFT JOIN users staff ON h.hospital_id = staff.hospital_id AND staff.role IN ('doctor', 'nurse')
                   LEFT JOIN vaccination_schedule vs ON c.child_id = vs.child_id
-                  WHERE u.role = 'admin'
+                  WHERE u.role = 'hospital_admin'
                   GROUP BY u.user_id
                   ORDER BY h.$name_column, u.full_name";
 
@@ -177,7 +193,7 @@ $admins_stmt = $db->prepare($admins_query);
 $admins_stmt->execute();
 $admins = $admins_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get summary statistics
+// FIXED: Get summary statistics
 $stats_query = "SELECT 
                 COUNT(DISTINCT u.user_id) as total_admins,
                 COUNT(DISTINCT CASE WHEN u.is_active = 1 THEN u.user_id END) as active_admins,
@@ -186,44 +202,54 @@ $stats_query = "SELECT
                 FROM users u
                 LEFT JOIN hospitals h ON u.hospital_id = h.hospital_id
                 LEFT JOIN children c ON h.hospital_id = c.hospital_id
-                WHERE u.role = 'admin'";
+                WHERE u.role = 'hospital_admin'";
 
 $stats_stmt = $db->prepare($stats_query);
 $stats_stmt->execute();
 $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
-
-// Helper function for date formatting
-function formatDate($date) {
-    if (!$date) return 'N/A';
-    return date('M j, Y', strtotime($date));
-}
 ?>
 
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Manage Hospital Admins</h1>
+    <h1 class="h2"><i class="fas fa-users-cog me-2 text-primary"></i>Manage Hospital Admins</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAdminModal">
             <i class="fas fa-plus me-1"></i>Add Hospital Admin
         </button>
+        <a href="debug_admins.php" class="btn btn-info ms-2" target="_blank">
+            <i class="fas fa-bug me-1"></i>Debug
+        </a>
     </div>
 </div>
 
+<!-- Debug Info -->
+<div class="alert alert-info">
+    <strong>Debug Info:</strong> 
+    Found <?php echo $admin_count; ?> users with role 'hospital_admin' in database. 
+    Hospital column: <?php echo $name_column; ?>. 
+    Complex query returned <?php echo count($admins); ?> results.
+    <?php if (empty($hospitals)): ?>
+        <span class="text-danger">WARNING: No hospitals found! You must add hospitals first.</span>
+    <?php endif; ?>
+</div>
+
 <?php if (!empty($error)): ?>
-    <div class="alert alert-danger">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="fas fa-exclamation-circle me-2"></i><?php echo $error; ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
 
 <?php if (!empty($success)): ?>
-    <div class="alert alert-success">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="fas fa-check-circle me-2"></i><?php echo $success; ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
 
 <!-- Statistics Cards -->
 <div class="row mb-4">
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-primary">
             <div class="card-body">
                 <i class="fas fa-users-cog fa-2x text-primary mb-2"></i>
                 <h4><?php echo $stats['total_admins']; ?></h4>
@@ -233,7 +259,7 @@ function formatDate($date) {
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-success">
             <div class="card-body">
                 <i class="fas fa-hospital fa-2x text-success mb-2"></i>
                 <h4><?php echo $stats['total_hospitals']; ?></h4>
@@ -242,7 +268,7 @@ function formatDate($date) {
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-info">
             <div class="card-body">
                 <i class="fas fa-baby fa-2x text-info mb-2"></i>
                 <h4><?php echo $stats['total_children']; ?></h4>
@@ -251,7 +277,7 @@ function formatDate($date) {
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-center">
+        <div class="card text-center border-warning">
             <div class="card-body">
                 <i class="fas fa-chart-line fa-2x text-warning mb-2"></i>
                 <h4><?php echo number_format($stats['total_children'] / max(1, $stats['total_hospitals']), 1); ?></h4>
@@ -267,11 +293,26 @@ function formatDate($date) {
         <h5><i class="fas fa-users-cog me-2"></i>Hospital Administrators</h5>
     </div>
     <div class="card-body">
-        <?php if (empty($admins)): ?>
+        <?php if (empty($hospitals)): ?>
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>No hospitals found!</strong> You need to add hospitals first before creating admins.
+                <a href="hospitals.php" class="btn btn-primary btn-sm ms-2">
+                    <i class="fas fa-plus me-1"></i>Add Hospital
+                </a>
+            </div>
+        <?php elseif (empty($admins)): ?>
             <div class="text-center py-4">
                 <i class="fas fa-users-cog fa-3x text-muted mb-3"></i>
                 <h5 class="text-muted">No hospital admins found</h5>
-                <p>Start by adding your first hospital administrator</p>
+                <?php if ($admin_count > 0): ?>
+                    <div class="alert alert-warning">
+                        Found <?php echo $admin_count; ?> hospital_admin users in database, but they're not showing due to missing hospital association.
+                        <a href="debug_admins.php" target="_blank" class="btn btn-info btn-sm">Debug Issue</a>
+                    </div>
+                <?php else: ?>
+                    <p>Start by adding your first hospital administrator</p>
+                <?php endif; ?>
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAdminModal">
                     Add Hospital Admin
                 </button>
@@ -311,10 +352,16 @@ function formatDate($date) {
                             </td>
                             <td>
                                 <?php if ($admin['email']): ?>
-                                    <i class="fas fa-envelope me-1"></i><?php echo htmlspecialchars($admin['email']); ?><br>
+                                    <div class="mb-1">
+                                        <i class="fas fa-envelope me-1"></i>
+                                        <a href="mailto:<?php echo htmlspecialchars($admin['email']); ?>"><?php echo htmlspecialchars($admin['email']); ?></a>
+                                    </div>
                                 <?php endif; ?>
                                 <?php if ($admin['phone']): ?>
-                                    <i class="fas fa-phone me-1"></i><?php echo htmlspecialchars($admin['phone']); ?>
+                                    <div>
+                                        <i class="fas fa-phone me-1"></i>
+                                        <a href="tel:<?php echo htmlspecialchars($admin['phone']); ?>"><?php echo htmlspecialchars($admin['phone']); ?></a>
+                                    </div>
                                 <?php endif; ?>
                                 <?php if (!$admin['email'] && !$admin['phone']): ?>
                                     <span class="text-muted">No contact info</span>
@@ -341,18 +388,18 @@ function formatDate($date) {
                                     <?php echo $admin['is_active'] ? 'Active' : 'Inactive'; ?>
                                 </span><br>
                                 <small class="text-muted">
-                                    Joined: <?php echo formatDate($admin['created_at']); ?>
+                                    Joined: <?php echo $utils->formatDate($admin['created_at']); ?>
                                 </small>
                             </td>
                             <td>
                                 <div class="btn-group btn-group-sm" role="group">
-                                    <button class="btn btn-outline-primary" onclick="editAdmin(<?php echo htmlspecialchars(json_encode($admin)); ?>)">
+                                    <button class="btn btn-outline-primary" onclick="editAdmin(<?php echo htmlspecialchars(json_encode($admin)); ?>)" title="Edit Admin">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="btn btn-outline-info" onclick="viewAdminDetails(<?php echo $admin['user_id']; ?>)">
+                                    <button class="btn btn-outline-info" onclick="viewAdminDetails(<?php echo $admin['user_id']; ?>)" title="View Details">
                                         <i class="fas fa-eye"></i>
                                     </button>
-                                    <button class="btn btn-outline-danger btn-delete" onclick="deleteAdmin(<?php echo $admin['user_id']; ?>)">
+                                    <button class="btn btn-outline-danger btn-delete" onclick="deleteAdmin(<?php echo $admin['user_id']; ?>)" title="Delete Admin">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -373,7 +420,9 @@ function formatDate($date) {
             <form method="POST">
                 <input type="hidden" name="action" value="add">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add Hospital Administrator</h5>
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus me-2"></i>Add Hospital Administrator
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -387,6 +436,9 @@ function formatDate($date) {
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <?php if (empty($hospitals)): ?>
+                            <div class="form-text text-danger">No hospitals available! Please add a hospital first.</div>
+                        <?php endif; ?>
                     </div>
                     <div class="mb-3">
                         <label for="full_name" class="form-label">Full Name *</label>
@@ -395,6 +447,7 @@ function formatDate($date) {
                     <div class="mb-3">
                         <label for="username" class="form-label">Username *</label>
                         <input type="text" class="form-control" id="username" name="username" required>
+                        <div class="form-text">This will be used for login</div>
                     </div>
                     <div class="mb-3">
                         <label for="password" class="form-label">Password *</label>
@@ -406,12 +459,15 @@ function formatDate($date) {
                     </div>
                     <div class="mb-3">
                         <label for="phone" class="form-label">Phone Number</label>
-                        <input type="tel" class="form-control" id="phone" name="phone">
+                        <input type="tel" class="form-control" id="phone" name="phone" placeholder="+255 XXX XXX XXX">
+                        <div class="form-text">Format: +255XXXXXXXXX or 0XXXXXXXXX</div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Administrator</button>
+                    <button type="submit" class="btn btn-primary" <?php echo empty($hospitals) ? 'disabled' : ''; ?>>
+                        <i class="fas fa-save me-1"></i>Add Administrator
+                    </button>
                 </div>
             </form>
         </div>
@@ -426,7 +482,9 @@ function formatDate($date) {
                 <input type="hidden" name="action" value="edit">
                 <input type="hidden" name="user_id" id="edit_user_id">
                 <div class="modal-header">
-                    <h5 class="modal-title">Edit Hospital Administrator</h5>
+                    <h5 class="modal-title">
+                        <i class="fas fa-edit me-2"></i>Edit Hospital Administrator
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -459,6 +517,7 @@ function formatDate($date) {
                     <div class="mb-3">
                         <label for="edit_phone" class="form-label">Phone Number</label>
                         <input type="tel" class="form-control" id="edit_phone" name="phone">
+                        <div class="form-text">Format: +255XXXXXXXXX or 0XXXXXXXXX</div>
                     </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="edit_is_active" name="is_active">
@@ -467,7 +526,9 @@ function formatDate($date) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update Administrator</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Update Administrator
+                    </button>
                 </div>
             </form>
         </div>
@@ -479,7 +540,9 @@ function formatDate($date) {
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Administrator Details</h5>
+                <h5 class="modal-title">
+                    <i class="fas fa-user-tie me-2"></i>Administrator Details
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="adminDetailsContent">
@@ -487,7 +550,9 @@ function formatDate($date) {
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="window.print()">Print</button>
+                <button type="button" class="btn btn-primary" onclick="window.print()">
+                    <i class="fas fa-print me-1"></i>Print
+                </button>
             </div>
         </div>
     </div>
@@ -539,6 +604,23 @@ function viewAdminDetails(userId) {
                 <i class="fas fa-info-circle me-2"></i>
                 Administrator details feature is under development.
             </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Quick Actions</h6>
+                    <div class="d-grid gap-2">
+                        <a href="../admin/dashboard.php" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-chart-bar me-1"></i>Admin Dashboard
+                        </a>
+                        <a href="hospitals.php" class="btn btn-outline-info btn-sm">
+                            <i class="fas fa-hospital me-1"></i>Manage Hospitals
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6>Performance Metrics</h6>
+                    <p class="text-muted">Detailed admin performance metrics will be shown here in future updates.</p>
+                </div>
+            </div>
         `;
     }, 1000);
 }
@@ -548,6 +630,18 @@ document.getElementById("full_name").addEventListener("input", function() {
     const fullName = this.value.toLowerCase().replace(/\s+/g, "");
     const username = fullName.substring(0, 15);
     document.getElementById("username").value = username;
+});
+
+// Auto-clear alerts after 5 seconds
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(alert => {
+            if (alert.classList.contains('show')) {
+                alert.classList.remove('show');
+            }
+        });
+    }, 5000);
 });
 </script>
 

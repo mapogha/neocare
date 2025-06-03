@@ -9,12 +9,12 @@ $db = $database->getConnection();
 $current_user = $session->getCurrentUser();
 $hospital_id = $current_user['hospital_id'];
 
-// Doctor Statistics
+// Doctor Statistics - FIXED: Use recorded_by instead of doctor_id
 $doctor_stats_query = "SELECT 
     (SELECT COUNT(*) FROM children WHERE hospital_id = :hospital_id) as total_children,
-    (SELECT COUNT(*) FROM child_medical_records cmr JOIN children c ON cmr.child_id = c.child_id WHERE c.hospital_id = :hospital_id AND cmr.doctor_id = :user_id) as my_consultations,
-    (SELECT COUNT(*) FROM child_medical_records cmr JOIN children c ON cmr.child_id = c.child_id WHERE c.hospital_id = :hospital_id AND cmr.doctor_id = :user_id AND DATE(cmr.visit_date) = CURDATE()) as consultations_today,
-    (SELECT COUNT(*) FROM child_medical_records cmr JOIN children c ON cmr.child_id = c.child_id WHERE c.hospital_id = :hospital_id AND cmr.doctor_id = :user_id AND WEEK(cmr.visit_date) = WEEK(CURDATE())) as consultations_this_week";
+    (SELECT COUNT(*) FROM child_medical_records cmr JOIN children c ON cmr.child_id = c.child_id WHERE c.hospital_id = :hospital_id AND cmr.recorded_by = :user_id) as my_consultations,
+    (SELECT COUNT(*) FROM child_medical_records cmr JOIN children c ON cmr.child_id = c.child_id WHERE c.hospital_id = :hospital_id AND cmr.recorded_by = :user_id AND DATE(cmr.visit_date) = CURDATE()) as consultations_today,
+    (SELECT COUNT(*) FROM child_medical_records cmr JOIN children c ON cmr.child_id = c.child_id WHERE c.hospital_id = :hospital_id AND cmr.recorded_by = :user_id AND WEEK(cmr.visit_date) = WEEK(CURDATE())) as consultations_this_week";
 
 $doctor_stmt = $db->prepare($doctor_stats_query);
 $doctor_stmt->bindParam(':hospital_id', $hospital_id);
@@ -22,7 +22,7 @@ $doctor_stmt->bindParam(':user_id', $current_user['user_id']);
 $doctor_stmt->execute();
 $doctor_stats = $doctor_stmt->fetch(PDO::FETCH_ASSOC);
 
-// Health Monitoring Alerts
+// Health Monitoring Alerts - SIMPLIFIED: Remove doctor_id references
 $health_alerts_query = "SELECT 
     c.child_id,
     c.child_name,
@@ -55,10 +55,10 @@ $health_alerts_query = "SELECT
     c.registration_number,
     c.date_of_birth,
     TIMESTAMPDIFF(MONTH, c.date_of_birth, CURDATE()) as age_months,
-    cmr.weight_kg,
-    cmr.height_cm,
-    cmr.visit_date,
-    cmr.notes,
+    NULL as weight_kg,
+    NULL as height_cm,
+    NULL as visit_date,
+    NULL as notes,
     'no_recent_checkup' as alert_type
     FROM children c
     LEFT JOIN child_medical_records cmr ON c.child_id = cmr.child_id AND cmr.visit_date = (
@@ -78,7 +78,7 @@ $alerts_stmt->bindParam(':hospital_id', $hospital_id);
 $alerts_stmt->execute();
 $health_alerts = $alerts_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Recent Patient Consultations
+// Recent Patient Consultations - FIXED: Use recorded_by
 $recent_consultations_query = "SELECT 
     c.child_id,
     c.child_name,
@@ -92,7 +92,7 @@ $recent_consultations_query = "SELECT
     TIMESTAMPDIFF(MONTH, c.date_of_birth, CURDATE()) as age_months
     FROM child_medical_records cmr
     JOIN children c ON cmr.child_id = c.child_id
-    WHERE c.hospital_id = :hospital_id AND cmr.doctor_id = :user_id
+    WHERE c.hospital_id = :hospital_id AND cmr.recorded_by = :user_id
     ORDER BY cmr.visit_date DESC
     LIMIT 15";
 
@@ -102,7 +102,7 @@ $consultations_stmt->bindParam(':user_id', $current_user['user_id']);
 $consultations_stmt->execute();
 $recent_consultations = $consultations_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Children requiring follow-up
+// Children requiring follow-up - SIMPLIFIED: Remove follow_up_date references (not in schema)
 $followup_query = "SELECT 
     c.child_id,
     c.child_name,
@@ -111,16 +111,15 @@ $followup_query = "SELECT
     c.parent_phone,
     cmr.visit_date,
     cmr.notes,
-    cmr.follow_up_date,
     TIMESTAMPDIFF(MONTH, c.date_of_birth, CURDATE()) as age_months
     FROM child_medical_records cmr
     JOIN children c ON cmr.child_id = c.child_id
     WHERE c.hospital_id = :hospital_id 
-    AND cmr.doctor_id = :user_id
-    AND cmr.follow_up_date IS NOT NULL 
-    AND cmr.follow_up_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-    AND cmr.follow_up_date >= CURDATE()
-    ORDER BY cmr.follow_up_date ASC";
+    AND cmr.recorded_by = :user_id
+    AND cmr.visit_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+    AND cmr.notes LIKE '%follow%'
+    ORDER BY cmr.visit_date DESC
+    LIMIT 10";
 
 $followup_stmt = $db->prepare($followup_query);
 $followup_stmt->bindParam(':hospital_id', $hospital_id);
@@ -214,8 +213,8 @@ $vaccination_overview = $vaccination_stmt->fetch(PDO::FETCH_ASSOC);
             <div class="card-body">
                 <i class="fas fa-calendar-check fa-3x text-info mb-3"></i>
                 <h3 class="text-info"><?php echo count($followup_patients); ?></h3>
-                <p class="card-text">Follow-ups Due</p>
-                <small class="text-muted">Next 7 days</small>
+                <p class="card-text">Recent Records</p>
+                <small class="text-muted">With follow-up notes</small>
             </div>
         </div>
     </div>
@@ -257,11 +256,11 @@ $vaccination_overview = $vaccination_stmt->fetch(PDO::FETCH_ASSOC);
 <div class="row">
     <!-- Medical Activities -->
     <div class="col-lg-8">
-        <!-- Follow-up Appointments -->
+        <!-- Recent Medical Records with Follow-up Notes -->
         <?php if (!empty($followup_patients)): ?>
         <div class="card mb-3">
             <div class="card-header bg-info text-white">
-                <h5><i class="fas fa-calendar-alt me-2"></i>Upcoming Follow-up Appointments</h5>
+                <h5><i class="fas fa-calendar-alt me-2"></i>Recent Records with Follow-up Notes</h5>
             </div>
             <div class="card-body">
                 <div class="list-group list-group-flush">
@@ -276,17 +275,24 @@ $vaccination_overview = $vaccination_stmt->fetch(PDO::FETCH_ASSOC);
                                 </small>
                                 <div class="mt-1">
                                     <small class="text-primary">
-                                        Due: <?php echo date('M j, Y', strtotime($patient['follow_up_date'])); ?>
+                                        Last visit: <?php echo date('M j, Y', strtotime($patient['visit_date'])); ?>
                                     </small>
                                 </div>
+                                <?php if ($patient['notes']): ?>
+                                    <div class="mt-1">
+                                        <small class="text-muted"><?php echo htmlspecialchars(substr($patient['notes'], 0, 100)); ?>...</small>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                             <div class="btn-group btn-group-sm" role="group">
                                 <a href="medical_records.php?action=add&child_id=<?php echo $patient['child_id']; ?>" class="btn btn-outline-primary">
                                     <i class="fas fa-notes-medical"></i>
                                 </a>
+                                <?php if ($patient['parent_phone']): ?>
                                 <button class="btn btn-outline-info" onclick="callParent('<?php echo $patient['parent_phone']; ?>')">
                                     <i class="fas fa-phone"></i>
                                 </button>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -307,6 +313,7 @@ $vaccination_overview = $vaccination_stmt->fetch(PDO::FETCH_ASSOC);
                         <i class="fas fa-clipboard fa-2x text-muted mb-2"></i>
                         <h6 class="text-muted">No recent consultations</h6>
                         <p class="text-muted small">Start by viewing children and adding medical records</p>
+                        <a href="children.php" class="btn btn-primary">View Children</a>
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
@@ -457,12 +464,12 @@ $vaccination_overview = $vaccination_stmt->fetch(PDO::FETCH_ASSOC);
                 <div class="row text-center">
                     <div class="col-6">
                         <div class="border-end">
-                            <h6 class="text-primary"><?php echo round($growth_stats['avg_weight'], 1); ?>kg</h6>
+                            <h6 class="text-primary"><?php echo $growth_stats['avg_weight'] ? round($growth_stats['avg_weight'], 1) : '0'; ?>kg</h6>
                             <small class="text-muted">Avg Weight</small>
                         </div>
                     </div>
                     <div class="col-6">
-                        <h6 class="text-warning"><?php echo round($growth_stats['avg_height'], 1); ?>cm</h6>
+                        <h6 class="text-warning"><?php echo $growth_stats['avg_height'] ? round($growth_stats['avg_height'], 1) : '0'; ?>cm</h6>
                         <small class="text-muted">Avg Height</small>
                     </div>
                 </div>
@@ -561,15 +568,25 @@ function callParent(phone) {
 }
 
 function openGrowthStandards() {
-    window.open('growth_standards.php', '_blank', 'width=900,height=700');
+    // You can create this page later or link to external standards
+    alert('Growth standards reference - Feature coming soon!');
 }
 
 function openVaccineSchedule() {
-    window.open('vaccine_schedule.php', '_blank', 'width=800,height=600');
+    // You can create this page later or link to vaccination schedule
+    alert('Vaccine schedule reference - Feature coming soon!');
 }
 
 function openMedicalCalculator() {
-    window.open('medical_calculator.php', '_blank', 'width=600,height=500');
+    // Simple BMI calculator popup
+    const weight = prompt('Enter weight in kg:');
+    const height = prompt('Enter height in cm:');
+    
+    if (weight && height) {
+        const heightM = height / 100;
+        const bmi = (weight / (heightM * heightM)).toFixed(1);
+        alert(`BMI: ${bmi}\n\nChild BMI Categories:\n- Underweight: <5th percentile\n- Normal: 5th-85th percentile\n- Overweight: 85th-95th percentile\n- Obese: >95th percentile`);
+    }
 }
 
 // Auto-refresh dashboard every 15 minutes

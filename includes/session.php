@@ -54,7 +54,7 @@ class SessionManager {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
     
-    // Check user permission
+    // Check user permission - FIXED to handle both string and array
     public function hasPermission($required_role) {
         $user = $this->getCurrentUser();
         if (!$user) return false;
@@ -62,14 +62,32 @@ class SessionManager {
         $role_hierarchy = [
             'super_admin' => 4,
             'hospital_admin' => 3,
+            'admin' => 3,  // Add 'admin' with same level as 'hospital_admin'
             'doctor' => 2,
             'nurse' => 1
         ];
         
         $user_level = $role_hierarchy[$user['role']] ?? 0;
-        $required_level = $role_hierarchy[$required_role] ?? 0;
         
-        return $user_level >= $required_level;
+        // Handle both string and array of required roles
+        if (is_array($required_role)) {
+            // Check if user role matches any of the required roles
+            foreach ($required_role as $role) {
+                if ($user['role'] === $role) {
+                    return true;
+                }
+                // Also check hierarchy
+                $required_level = $role_hierarchy[$role] ?? 0;
+                if ($user_level >= $required_level) {
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            // Original logic for single role
+            $required_level = $role_hierarchy[$required_role] ?? 0;
+            return $user_level >= $required_level;
+        }
     }
     
     // Login user
@@ -131,14 +149,39 @@ class SessionManager {
         }
     }
     
-    // Redirect if not authorized
+    // Redirect if not authorized - FIXED to handle both string and array
     public function requireRole($required_role) {
         $this->requireLogin();
         
         if (!$this->hasPermission($required_role)) {
-            header('Location: ../dashboard.php?error=unauthorized');
+            header('Location: ../index.php?error=unauthorized');
             exit();
         }
+    }
+    
+    // Helper method to check if user has specific role(s)
+    public function hasRole($role) {
+        if (!$this->isLoggedIn()) {
+            return false;
+        }
+        
+        $user_role = $_SESSION['role'] ?? '';
+        
+        if (is_array($role)) {
+            return in_array($user_role, $role);
+        } else {
+            return $user_role === $role;
+        }
+    }
+    
+    // Helper method for backwards compatibility
+    public function checkRole($role) {
+        // Support both 'admin' and 'hospital_admin'
+        if ($role === 'admin') {
+            return $this->hasRole(['admin', 'hospital_admin']);
+        }
+        
+        return $this->hasRole($role);
     }
 }
 
