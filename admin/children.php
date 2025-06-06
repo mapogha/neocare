@@ -2,12 +2,48 @@
 $page_title = 'Manage Children';
 require_once '../includes/header.php';
 
-$session->requireRole('hospital_admin');
+// FIX: Update role check to include super_admin
+$session->requireRole(['hospital_admin', 'super_admin']);
 
 $database = new Database();
 $db = $database->getConnection();
+
+// FIX: Handle hospital_id for both super_admin and hospital_admin
 $current_user = $session->getCurrentUser();
-$hospital_id = $current_user['hospital_id'];
+$hospital_id = null;
+
+if ($current_user['role'] === 'super_admin') {
+    $hospital_id = isset($_GET['hospital_id']) ? (int)$_GET['hospital_id'] : null;
+    if (!$hospital_id) {
+        header('Location: dashboard.php');
+        exit;
+    }
+    
+    // Verify hospital exists
+    $hospital_check_query = "SELECT hospital_id FROM hospitals WHERE hospital_id = :hospital_id";
+    $hospital_check_stmt = $db->prepare($hospital_check_query);
+    $hospital_check_stmt->bindParam(':hospital_id', $hospital_id);
+    $hospital_check_stmt->execute();
+    
+    if (!$hospital_check_stmt->fetch()) {
+        header('Location: dashboard.php');
+        exit;
+    }
+} else {
+    $hospital_id = $current_user['hospital_id'];
+    
+    // Check if hospital_id exists for regular admin
+    if (!$hospital_id) {
+        echo '<div class="container mt-4">';
+        echo '<div class="alert alert-danger">';
+        echo '<h5><i class="fas fa-exclamation-triangle me-2"></i>No Hospital Assignment</h5>';
+        echo '<p>Your account is not assigned to any hospital. Please contact the system administrator.</p>';
+        echo '<a href="../login.php" class="btn btn-primary">Back to Login</a>';
+        echo '</div></div>';
+        require_once '../includes/footer.php';
+        exit;
+    }
+}
 
 $error = '';
 $success = '';
@@ -110,17 +146,65 @@ $stats_stmt = $db->prepare($stats_query);
 $stats_stmt->bindParam(':hospital_id', $hospital_id);
 $stats_stmt->execute();
 $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
+
+// Get hospital info for display
+$hospital_query = "SELECT hospital_name FROM hospitals WHERE hospital_id = :hospital_id";
+$hospital_stmt = $db->prepare($hospital_query);
+$hospital_stmt->bindParam(':hospital_id', $hospital_id);
+$hospital_stmt->execute();
+$hospital_info = $hospital_stmt->fetch(PDO::FETCH_ASSOC);
+$hospital_name = $hospital_info['hospital_name'] ?? 'Unknown Hospital';
+
+// Helper function to build URLs with hospital_id for super admin
+function buildUrl($base_url, $params = []) {
+    global $current_user, $hospital_id;
+    if ($current_user['role'] === 'super_admin') {
+        $params['hospital_id'] = $hospital_id;
+    }
+    return $base_url . (!empty($params) ? '?' . http_build_query($params) : '');
+}
+
+// Helper function for pagination URLs
+function buildPageUrl($page_num, $search = '') {
+    global $current_user, $hospital_id;
+    $params = ['page' => $page_num];
+    if (!empty($search)) {
+        $params['search'] = $search;
+    }
+    if ($current_user['role'] === 'super_admin') {
+        $params['hospital_id'] = $hospital_id;
+    }
+    return 'children.php?' . http_build_query($params);
+}
 ?>
 
+<!-- FIX: Add breadcrumb for super admin -->
+<?php if ($current_user['role'] === 'super_admin'): ?>
+<nav aria-label="breadcrumb" class="mt-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="dashboard.php">Select Hospital</a></li>
+        <li class="breadcrumb-item"><a href="dashboard.php?hospital_id=<?php echo $hospital_id; ?>"><?php echo htmlspecialchars($hospital_name); ?></a></li>
+        <li class="breadcrumb-item active" aria-current="page">Manage Children</li>
+    </ol>
+</nav>
+<?php endif; ?>
+
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Manage Children</h1>
+    <h1 class="h2">
+        <?php echo $current_user['role'] === 'super_admin' ? 'Children Management - ' . htmlspecialchars($hospital_name) : 'Manage Children'; ?>
+    </h1>
     <div class="btn-toolbar mb-2 mb-md-0">
-        <a href="../nurse/register_child.php" class="btn btn-primary me-2">
+        <a href="<?php echo buildUrl('../nurse/register_child.php'); ?>" class="btn btn-primary me-2">
             <i class="fas fa-plus me-1"></i>Register New Child
         </a>
-        <button onclick="window.print()" class="btn btn-outline-secondary">
+        <button onclick="window.print()" class="btn btn-outline-secondary me-2">
             <i class="fas fa-print me-1"></i>Print List
         </button>
+        <?php if ($current_user['role'] === 'super_admin'): ?>
+        <a href="dashboard.php?hospital_id=<?php echo $hospital_id; ?>" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+        </a>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -180,6 +264,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 <div class="card mb-4">
     <div class="card-body">
         <form method="GET" class="row g-3">
+            <?php if ($current_user['role'] === 'super_admin'): ?>
+                <input type="hidden" name="hospital_id" value="<?php echo $hospital_id; ?>">
+            <?php endif; ?>
             <div class="col-md-8">
                 <div class="input-group">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -192,7 +279,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-search me-1"></i>Search
                     </button>
-                    <a href="children.php" class="btn btn-outline-secondary">
+                    <a href="<?php echo buildUrl('children.php'); ?>" class="btn btn-outline-secondary">
                         <i class="fas fa-times me-1"></i>Clear
                     </a>
                 </div>
@@ -218,10 +305,10 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                 <h5 class="text-muted">No children found</h5>
                 <?php if (!empty($search)): ?>
                     <p>Try adjusting your search criteria</p>
-                    <a href="children.php" class="btn btn-outline-primary">View All Children</a>
+                    <a href="<?php echo buildUrl('children.php'); ?>" class="btn btn-outline-primary">View All Children</a>
                 <?php else: ?>
                     <p>Start by registering your first child</p>
-                    <a href="../nurse/register_child.php" class="btn btn-primary">Register Child</a>
+                    <a href="<?php echo buildUrl('../nurse/register_child.php'); ?>" class="btn btn-primary">Register Child</a>
                 <?php endif; ?>
             </div>
         <?php else: ?>
@@ -295,7 +382,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                     <button class="btn btn-outline-success" onclick="editChild(<?php echo htmlspecialchars(json_encode($child)); ?>)">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <a href="../nurse/vaccination.php?child_id=<?php echo $child['child_id']; ?>" class="btn btn-outline-info">
+                                    <a href="<?php echo buildUrl('../nurse/vaccination.php', ['child_id' => $child['child_id']]); ?>" class="btn btn-outline-info">
                                         <i class="fas fa-syringe"></i>
                                     </a>
                                 </div>
@@ -311,17 +398,17 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             <nav aria-label="Children pagination">
                 <ul class="pagination justify-content-center">
                     <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                        <a class="page-link" href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>">Previous</a>
+                        <a class="page-link" href="<?php echo buildPageUrl($page - 1, $search); ?>">Previous</a>
                     </li>
                     
                     <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
                     <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>">
-                        <a class="page-link" href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>"><?php echo $i; ?></a>
+                        <a class="page-link" href="<?php echo buildPageUrl($i, $search); ?>"><?php echo $i; ?></a>
                     </li>
                     <?php endfor; ?>
                     
                     <li class="page-item <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
-                        <a class="page-link" href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>">Next</a>
+                        <a class="page-link" href="<?php echo buildPageUrl($page + 1, $search); ?>">Next</a>
                     </li>
                 </ul>
             </nav>
@@ -337,6 +424,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             <form method="POST">
                 <input type="hidden" name="action" value="edit_child">
                 <input type="hidden" name="child_id" id="edit_child_id">
+                <?php if ($current_user['role'] === 'super_admin'): ?>
+                    <input type="hidden" name="hospital_id" value="<?php echo $hospital_id; ?>">
+                <?php endif; ?>
                 <div class="modal-header">
                     <h5 class="modal-title">Edit Child Information</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -418,8 +508,9 @@ function editChild(child) {
 }
 
 function viewChild(childId) {
+    const hospitalParam = ' . ($current_user['role'] === 'super_admin' ? '"&hospital_id=' . $hospital_id . '"' : '""') . ';
     // Load child details via AJAX
-    fetch(`../api/get_child_details.php?child_id=${childId}`)
+    fetch(`../api/get_child_details.php?child_id=${childId}${hospitalParam}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {

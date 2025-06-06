@@ -399,6 +399,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                     <button class="btn btn-outline-info" onclick="viewAdminDetails(<?php echo $admin['user_id']; ?>)" title="View Details">
                                         <i class="fas fa-eye"></i>
                                     </button>
+                                    <!-- <a href="../admin/dashboard.php?hospital_id=<?php echo $admin['hospital_id']; ?>" class="btn btn-outline-success btn-sm" title="View Hospital Dashboard">
+                                        <i class="fas fa-chart-bar"></i>
+                                    </a> -->
                                     <button class="btn btn-outline-danger btn-delete" onclick="deleteAdmin(<?php echo $admin['user_id']; ?>)" title="Delete Admin">
                                         <i class="fas fa-trash"></i>
                                     </button>
@@ -559,6 +562,157 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 </div>
 
 <script>
+function viewAdminDetails(userId) {
+    // Find the admin data from the existing admins array
+    const adminData = <?php echo json_encode($admins); ?>;
+    const admin = adminData.find(a => a.user_id == userId);
+    
+    if (!admin) {
+        document.getElementById("adminDetailsContent").innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Administrator not found.
+            </div>
+        `;
+        new bootstrap.Modal(document.getElementById("adminDetailsModal")).show();
+        return;
+    }
+    
+    // Show loading first
+    document.getElementById("adminDetailsContent").innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading administrator details...</p>
+        </div>
+    `;
+    
+    new bootstrap.Modal(document.getElementById("adminDetailsModal")).show();
+    
+    // Show actual admin details after brief delay
+    setTimeout(() => {
+        const statusBadge = admin.is_active == 1 ? 
+            '<span class="badge bg-success">Active</span>' : 
+            '<span class="badge bg-danger">Inactive</span>';
+            
+        const contactInfo = [];
+        if (admin.email) contactInfo.push(`<i class="fas fa-envelope me-1"></i> ${admin.email}`);
+        if (admin.phone) contactInfo.push(`<i class="fas fa-phone me-1"></i> ${admin.phone}`);
+        
+        document.getElementById("adminDetailsContent").innerHTML = `
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-user-tie fa-4x text-primary mb-3"></i>
+                        <h5>${admin.full_name}</h5>
+                        <p class="text-muted">@${admin.username}</p>
+                        ${statusBadge}
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="row">
+                        <div class="col-12 mb-4">
+                            <h6><i class="fas fa-hospital me-2"></i>Hospital Information</h6>
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title">${admin.hospital_name}</h6>
+                                    <small class="text-muted">Hospital ID: ${admin.hospital_id}</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12 mb-4">
+                            <h6><i class="fas fa-address-card me-2"></i>Contact Information</h6>
+                            <div class="card">
+                                <div class="card-body">
+                                    ${contactInfo.length > 0 ? contactInfo.join('<br>') : '<span class="text-muted">No contact information available</span>'}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12 mb-4">
+                            <h6><i class="fas fa-chart-bar me-2"></i>Hospital Statistics</h6>
+                            <div class="row">
+                                <div class="col-4">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <i class="fas fa-baby text-info mb-2"></i>
+                                            <h5>${admin.total_children}</h5>
+                                            <small>Children</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <i class="fas fa-user-md text-success mb-2"></i>
+                                            <h5>${admin.total_staff}</h5>
+                                            <small>Staff</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <i class="fas fa-syringe text-warning mb-2"></i>
+                                            <h5>${admin.total_vaccinations}</h5>
+                                            <small>Vaccinations</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <h6><i class="fas fa-info-circle me-2"></i>Account Details</h6>
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <strong>User ID:</strong> ${admin.user_id}<br>
+                                            <strong>Role:</strong> Hospital Administrator<br>
+                                            <strong>Status:</strong> ${admin.is_active == 1 ? 'Active' : 'Inactive'}
+                                        </div>
+                                        <div class="col-6">
+                                            <strong>Created:</strong> ${admin.created_at ? new Date(admin.created_at).toLocaleDateString() : 'N/A'}<br>
+                                            <strong>Last Updated:</strong> ${admin.updated_at ? new Date(admin.updated_at).toLocaleDateString() : 'N/A'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6><i class="fas fa-tools me-2"></i>Quick Actions</h6>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-outline-primary btn-sm" onclick="editAdmin(${JSON.stringify(admin).replace(/"/g, '&quot;')})">
+                            <i class="fas fa-edit me-1"></i>Edit Admin
+                        </button>
+                
+                        <a href="hospitals.php" class="btn btn-outline-success btn-sm">
+                            <i class="fas fa-hospital me-1"></i>Manage Hospitals
+                        </a>
+    
+                    </div>
+                </div>
+            </div>
+        `;
+    }, 500);
+}
+
+// Add function to allow super admin to login as hospital admin (impersonation)
+function loginAsAdmin(userId) {
+    if (confirm('Login as this administrator? You will be switched to their account view.')) {
+        // You can implement admin impersonation here
+        window.location.href = `../admin/dashboard.php?impersonate=${userId}`;
+    }
+}
+
 function editAdmin(admin) {
     document.getElementById("edit_user_id").value = admin.user_id;
     document.getElementById("edit_hospital_id").value = admin.hospital_id;
@@ -582,47 +736,6 @@ function deleteAdmin(userId) {
         document.body.appendChild(form);
         form.submit();
     }
-}
-
-function viewAdminDetails(userId) {
-    // Show loading
-    document.getElementById("adminDetailsContent").innerHTML = `
-        <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mt-2">Loading administrator details...</p>
-        </div>
-    `;
-    
-    new bootstrap.Modal(document.getElementById("adminDetailsModal")).show();
-    
-    // Simple fallback since API might not exist
-    setTimeout(() => {
-        document.getElementById("adminDetailsContent").innerHTML = `
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i>
-                Administrator details feature is under development.
-            </div>
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Quick Actions</h6>
-                    <div class="d-grid gap-2">
-                        <a href="../admin/dashboard.php" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-chart-bar me-1"></i>Admin Dashboard
-                        </a>
-                        <a href="hospitals.php" class="btn btn-outline-info btn-sm">
-                            <i class="fas fa-hospital me-1"></i>Manage Hospitals
-                        </a>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <h6>Performance Metrics</h6>
-                    <p class="text-muted">Detailed admin performance metrics will be shown here in future updates.</p>
-                </div>
-            </div>
-        `;
-    }, 1000);
 }
 
 // Auto-generate username from full name
