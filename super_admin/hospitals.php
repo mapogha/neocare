@@ -238,7 +238,7 @@ $summary = $summary_stmt->fetch(PDO::FETCH_ASSOC);
                     </thead>
                     <tbody>
                         <?php foreach ($hospitals as $hospital): ?>
-                        <tr>
+                        <tr data-hospital-id="<?php echo $hospital['hospital_id']; ?>" data-hospital='<?php echo htmlspecialchars(json_encode($hospital)); ?>'>
                             <td>
                                 <div class="d-flex align-items-center">
                                     <div class="me-3">
@@ -418,7 +418,7 @@ $summary = $summary_stmt->fetch(PDO::FETCH_ASSOC);
 
 <!-- Hospital Details Modal -->
 <div class="modal fade" id="hospitalDetailsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -464,7 +464,7 @@ function deleteHospital(hospitalId) {
 }
 
 function viewHospitalDetails(hospitalId) {
-    // Show loading
+    // Show loading first
     document.getElementById("hospitalDetailsContent").innerHTML = `
         <div class="text-center py-4">
             <div class="spinner-border text-primary" role="status">
@@ -474,34 +474,407 @@ function viewHospitalDetails(hospitalId) {
         </div>
     `;
     
+    // Show the modal
     new bootstrap.Modal(document.getElementById("hospitalDetailsModal")).show();
     
-    // Simple fallback since detailed API might not exist
+    // Find the hospital data from the table row
+    const hospitalRow = document.querySelector(`tr[data-hospital-id="${hospitalId}"]`);
+    if (!hospitalRow) {
+        document.getElementById("hospitalDetailsContent").innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Hospital information not found.
+            </div>
+        `;
+        return;
+    }
+    
+    // Extract hospital data from the data attribute
+    const hospital = JSON.parse(hospitalRow.getAttribute('data-hospital'));
+    
+    // Calculate metrics
+    const staff_ratio = hospital.total_children > 0 ? hospital.total_staff / hospital.total_children : 0;
+    const vaccine_ratio = hospital.total_children > 0 ? hospital.total_vaccinations / hospital.total_children : 0;
+    
+    // Generate detailed hospital information
     setTimeout(() => {
         document.getElementById("hospitalDetailsContent").innerHTML = `
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i>
-                Detailed hospital analytics and reporting features are under development.
-            </div>
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Quick Actions</h6>
-                    <div class="d-grid gap-2">
-                        <a href="../admin/dashboard.php" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-chart-bar me-1"></i>View Hospital Dashboard
-                        </a>
-                        <a href="admins.php" class="btn btn-outline-info btn-sm">
-                            <i class="fas fa-users-cog me-1"></i>Manage Administrators
-                        </a>
+            <!-- Hospital Header -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary text-white">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h4 class="mb-0">
+                                        <i class="fas fa-hospital me-2"></i>
+                                        ${hospital.hospital_name}
+                                    </h4>
+                                </div>
+                                <div class="col-auto">
+                                    <button class="btn btn-light btn-sm" onclick="editHospitalFromDetails(${hospital.hospital_id})">
+                                        <i class="fas fa-edit me-1"></i>Edit
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-muted mb-3">
+                                        <i class="fas fa-info-circle me-2"></i>Contact Information
+                                    </h6>
+                                    <table class="table table-borderless table-sm">
+                                        <tr>
+                                            <td width="30%"><strong>Address:</strong></td>
+                                            <td>
+                                                ${hospital.address ? 
+                                                    `<i class="fas fa-map-marker-alt text-success me-1"></i>${hospital.address}` : 
+                                                    '<span class="text-muted">Not provided</span>'
+                                                }
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Phone:</strong></td>
+                                            <td>
+                                                ${hospital.phone ? 
+                                                    `<i class="fas fa-phone text-success me-1"></i><a href="tel:${hospital.phone}" class="text-decoration-none">${hospital.phone}</a>` : 
+                                                    '<span class="text-muted">Not provided</span>'
+                                                }
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Email:</strong></td>
+                                            <td>
+                                                ${hospital.email ? 
+                                                    `<i class="fas fa-envelope text-info me-1"></i><a href="mailto:${hospital.email}" class="text-decoration-none">${hospital.email}</a>` : 
+                                                    '<span class="text-muted">Not provided</span>'
+                                                }
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-muted mb-3">
+                                        <i class="fas fa-chart-bar me-2"></i>Quick Statistics
+                                    </h6>
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="bg-light p-3 rounded">
+                                                <i class="fas fa-baby fa-2x text-primary mb-2"></i>
+                                                <h4 class="text-primary mb-0">${hospital.total_children}</h4>
+                                                <small class="text-muted">Children</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="bg-light p-3 rounded">
+                                                <i class="fas fa-users fa-2x text-info mb-2"></i>
+                                                <h4 class="text-info mb-0">${hospital.total_staff}</h4>
+                                                <small class="text-muted">Staff</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="bg-light p-3 rounded">
+                                                <i class="fas fa-syringe fa-2x text-success mb-2"></i>
+                                                <h4 class="text-success mb-0">${hospital.total_vaccinations}</h4>
+                                                <small class="text-muted">Vaccines</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
+            </div>
+            
+            <!-- Performance Metrics -->
+            <div class="row mb-4">
                 <div class="col-md-6">
-                    <h6>Hospital Statistics</h6>
-                    <p class="text-muted">Detailed statistics will be shown here in future updates.</p>
+                    <div class="card">
+                        <div class="card-header bg-warning text-dark">
+                            <h6 class="mb-0">
+                                <i class="fas fa-tachometer-alt me-2"></i>Performance Metrics
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span>Staff to Children Ratio</span>
+                                    <span class="badge bg-${staff_ratio >= 0.1 ? 'success' : 'warning'} fs-6">
+                                        ${staff_ratio.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div class="progress">
+                                    <div class="progress-bar bg-${staff_ratio >= 0.1 ? 'success' : 'warning'}" 
+                                         style="width: ${Math.min(staff_ratio * 1000, 100)}%"></div>
+                                </div>
+                                <small class="text-muted">
+                                    ${staff_ratio >= 0.1 ? 'Good staff coverage' : 'Consider increasing staff'}
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span>Vaccination Rate per Child</span>
+                                    <span class="badge bg-${vaccine_ratio >= 5 ? 'success' : (vaccine_ratio >= 2 ? 'warning' : 'danger')} fs-6">
+                                        ${vaccine_ratio.toFixed(1)}
+                                    </span>
+                                </div>
+                                <div class="progress">
+                                    <div class="progress-bar bg-${vaccine_ratio >= 5 ? 'success' : (vaccine_ratio >= 2 ? 'warning' : 'danger')}" 
+                                         style="width: ${Math.min(vaccine_ratio * 10, 100)}%"></div>
+                                </div>
+                                <small class="text-muted">
+                                    ${vaccine_ratio >= 5 ? 'Excellent vaccination coverage' : 
+                                      (vaccine_ratio >= 2 ? 'Good vaccination rate' : 'Needs improvement in vaccination coverage')}
+                                </small>
+                            </div>
+                            
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-lightbulb me-2"></i>
+                                <strong>Performance Summary:</strong><br>
+                                This hospital ${hospital.total_children > 0 ? 'is actively serving' : 'has no registered'} 
+                                ${hospital.total_children} children with ${hospital.total_staff} staff members. 
+                                ${hospital.total_vaccinations > 0 ? 
+                                    `A total of ${hospital.total_vaccinations} vaccinations have been completed.` : 
+                                    'No vaccinations have been recorded yet.'
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0">
+                                <i class="fas fa-chart-pie me-2"></i>Hospital Status
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center mb-3">
+                                <div class="col-12">
+                                    <div class="p-3 rounded ${getHospitalStatusClass(hospital)}">
+                                        <i class="fas fa-${getHospitalStatusIcon(hospital)} fa-3x mb-2"></i>
+                                        <h5 class="mb-0">${getHospitalStatus(hospital)}</h5>
+                                        <small>${getHospitalStatusDescription(hospital)}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="list-group list-group-flush">
+                                <div class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                                    <span>Registration Status:</span>
+                                    <span class="badge bg-success">Active</span>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                                    <span>Data Completeness:</span>
+                                    <span class="badge bg-${getDataCompletenessStatus(hospital).class}">
+                                        ${getDataCompletenessStatus(hospital).percentage}%
+                                    </span>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                                    <span>Operational Level:</span>
+                                    <span class="badge bg-${getOperationalLevel(hospital).class}">
+                                        ${getOperationalLevel(hospital).level}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Recommendations -->
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white">
+                            <h6 class="mb-0">
+                                <i class="fas fa-tasks me-2"></i>Recommendations & Quick Actions
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <h6 class="text-muted mb-3">Action Recommendations:</h6>
+                                    <div class="list-group">
+                                        ${generateRecommendations(hospital)}
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <h6 class="text-muted mb-3">Quick Actions:</h6>
+                                    <div class="d-grid gap-2">
+                                        <button class="btn btn-primary btn-sm" onclick="editHospitalFromDetails(${hospital.hospital_id})">
+                                            <i class="fas fa-edit me-1"></i>Edit Hospital Info
+                                        </button>
+                                        <button class="btn btn-info btn-sm" onclick="alert('Feature coming soon!')">
+                                            <i class="fas fa-chart-line me-1"></i>View Analytics
+                                        </button>
+                                        <button class="btn btn-success btn-sm" onclick="window.print()">
+                                            <i class="fas fa-print me-1"></i>Print Report
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm" onclick="alert('Export feature coming soon!')">
+                                            <i class="fas fa-download me-1"></i>Export Data
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
-    }, 1000);
+    }, 800); // Small delay to show loading
+}
+
+// Helper function to edit hospital from details modal
+function editHospitalFromDetails(hospitalId) {
+    // Close the details modal first
+    bootstrap.Modal.getInstance(document.getElementById("hospitalDetailsModal")).hide();
+    
+    // Find the hospital data and trigger edit
+    const hospitalRow = document.querySelector(`tr[data-hospital-id="${hospitalId}"]`);
+    if (hospitalRow) {
+        const hospital = JSON.parse(hospitalRow.getAttribute('data-hospital'));
+        editHospital(hospital);
+    }
+}
+
+// Helper functions for status determination
+function getHospitalStatus(hospital) {
+    if (hospital.total_children === 0) return "Setup Required";
+    if (hospital.total_staff === 0) return "Needs Staff";
+    if (hospital.total_vaccinations / hospital.total_children >= 5) return "Excellent";
+    if (hospital.total_vaccinations / hospital.total_children >= 2) return "Good";
+    return "Needs Improvement";
+}
+
+function getHospitalStatusClass(hospital) {
+    const status = getHospitalStatus(hospital);
+    switch (status) {
+        case "Excellent": return "bg-success text-white";
+        case "Good": return "bg-info text-white";
+        case "Needs Staff": return "bg-warning text-dark";
+        case "Setup Required": return "bg-secondary text-white";
+        default: return "bg-danger text-white";
+    }
+}
+
+function getHospitalStatusIcon(hospital) {
+    const status = getHospitalStatus(hospital);
+    switch (status) {
+        case "Excellent": return "star";
+        case "Good": return "thumbs-up";
+        case "Needs Staff": return "user-plus";
+        case "Setup Required": return "cog";
+        default: return "exclamation-triangle";
+    }
+}
+
+function getHospitalStatusDescription(hospital) {
+    const status = getHospitalStatus(hospital);
+    switch (status) {
+        case "Excellent": return "Outstanding performance metrics";
+        case "Good": return "Good operational status";
+        case "Needs Staff": return "Requires additional staff";
+        case "Setup Required": return "Initial setup needed";
+        default: return "Performance below standards";
+    }
+}
+
+function getDataCompletenessStatus(hospital) {
+    let score = 0;
+    if (hospital.hospital_name) score += 25;
+    if (hospital.address) score += 25;
+    if (hospital.phone) score += 25;
+    if (hospital.email) score += 25;
+    
+    return {
+        percentage: score,
+        class: score >= 75 ? 'success' : (score >= 50 ? 'warning' : 'danger')
+    };
+}
+
+function getOperationalLevel(hospital) {
+    if (hospital.total_children === 0) {
+        return { level: "Setup", class: "secondary" };
+    }
+    if (hospital.total_staff === 0) {
+        return { level: "Limited", class: "warning" };
+    }
+    if (hospital.total_vaccinations / hospital.total_children >= 3) {
+        return { level: "Full", class: "success" };
+    }
+    return { level: "Basic", class: "info" };
+}
+
+function generateRecommendations(hospital) {
+    const recommendations = [];
+    
+    if (hospital.total_children === 0) {
+        recommendations.push({
+            type: "primary",
+            icon: "user-plus",
+            text: "Start registering children to begin operations"
+        });
+    }
+    
+    if (hospital.total_staff === 0) {
+        recommendations.push({
+            type: "warning",
+            icon: "users",
+            text: "Assign staff members to this hospital"
+        });
+    }
+    
+    if (!hospital.address) {
+        recommendations.push({
+            type: "info",
+            icon: "map-marker-alt",
+            text: "Add hospital address for better record keeping"
+        });
+    }
+    
+    if (!hospital.phone && !hospital.email) {
+        recommendations.push({
+            type: "info",
+            icon: "phone",
+            text: "Add contact information for communication"
+        });
+    }
+    
+    if (hospital.total_children > 0 && (hospital.total_staff / hospital.total_children) < 0.1) {
+        recommendations.push({
+            type: "warning",
+            icon: "user-plus",
+            text: "Consider increasing staff to improve staff-to-children ratio"
+        });
+    }
+    
+    if (hospital.total_children > 0 && (hospital.total_vaccinations / hospital.total_children) < 2) {
+        recommendations.push({
+            type: "danger",
+            icon: "syringe",
+            text: "Focus on improving vaccination coverage"
+        });
+    }
+    
+    if (recommendations.length === 0) {
+        recommendations.push({
+            type: "success",
+            icon: "check-circle",
+            text: "Hospital is performing well! Keep up the good work."
+        });
+    }
+    
+    return recommendations.map(rec => `
+        <div class="list-group-item border-0 px-0">
+            <i class="fas fa-${rec.icon} text-${rec.type} me-2"></i>
+            ${rec.text}
+        </div>
+    `).join('');
 }
 
 // Form validation and auto-clear alerts
