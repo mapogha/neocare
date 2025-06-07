@@ -1,6 +1,7 @@
 <?php
 $page_title = 'Growth Charts';
 require_once '../includes/header.php';
+require_once '../includes/functions.php';
 
 $session->requireRole('doctor');
 
